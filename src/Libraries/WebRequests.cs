@@ -161,7 +161,7 @@ namespace uMod.Libraries
                 int timeout = GetTimeout();
 
                 Process process = new Process();
-                process.StartInfo.FileName = Path.Combine(Interface.uMod.RootDirectory, "wcs.exe");
+                process.StartInfo.FileName = Path.Combine(Interface.uMod.RootDirectory, "wcp.exe");
                 process.StartInfo.Arguments = $"--method={Method} --url=\"{Url}\" --timeout={timeout}";
                 if (RequestHeaders != null)
                 {
