@@ -4,7 +4,7 @@ using System;
 using System.IO;
 using System.Net;
 
-namespace uMod.Libraries.WebRequests
+namespace uMod.Libraries.Net
 {
     internal class WebClient
     {
@@ -34,7 +34,7 @@ namespace uMod.Libraries.WebRequests
                 }
 
                 string remoteHash = response.Headers[HttpResponseHeader.ETag].Trim('"');
-                string localHash = File.Exists(filePath) ? GetHash(filePath, Utilities.Algorithms.MD5) : "0";
+                string localHash = File.Exists(filePath) ? Utility.GetHash(filePath, Utilities.Algorithms.MD5) : "0";
                 Interface.uMod.LogInfo($"Latest web client MD5: {remoteHash}");
                 Interface.uMod.LogInfo($"Local web client MD5: {localHash}");
                 if (remoteHash != localHash)
@@ -82,7 +82,7 @@ namespace uMod.Libraries.WebRequests
                     return;
                 }
 
-                string localHash = File.Exists(BinaryPath) ? GetHash(BinaryPath, Utilities.Algorithms.MD5) : "0";
+                string localHash = File.Exists(BinaryPath) ? Utility.GetHash(BinaryPath, Utilities.Algorithms.MD5) : "0";
                 if (remoteHash != localHash)
                 {
                     Interface.uMod.LogInfo($"Local hash did not match remote hash for {FileName}, attempting download again");

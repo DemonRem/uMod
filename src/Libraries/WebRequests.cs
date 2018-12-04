@@ -5,6 +5,7 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Diagnostics;
 using uMod.Plugins;
 
 namespace uMod.Libraries
@@ -82,9 +83,9 @@ namespace uMod.Libraries
             public Action<int, string> Callback { get; }
 
             /// <summary>
-            /// Gets the v2 callback delegate
+            /// Gets or sets the web request synchronicity
             /// </summary>
-            public Action<WebResponse> CallbackV2 { get; }
+            public bool Async { get; set; }
 
             /// <summary>
             /// Gets or sets the request timeout
@@ -117,11 +118,6 @@ namespace uMod.Libraries
             public string ResponseText { get; protected set; }
 
             /// <summary>
-            /// Gets the HTTP response object
-            /// </summary>
-            public WebResponse Response { get; protected set; }
-
-            /// <summary>
             /// Gets the plugin to which this web request belongs, if any
             /// </summary>
             public Plugin Owner { get; protected set; }
@@ -131,9 +127,6 @@ namespace uMod.Libraries
             /// </summary>
             public Dictionary<string, string> RequestHeaders { get; set; }
 
-            private HttpWebRequest request;
-            private WaitHandle waitHandle;
-            private RegisteredWaitHandle registeredWaitHandle;
             private Event.Callback<Plugin, PluginManager> removedFromManager;
 
             /// <summary>
@@ -151,14 +144,43 @@ namespace uMod.Libraries
             }
 
             /// <summary>
-            /// Initializes a new instance of the WebRequest class
+            /// Gets timeout and ensures it is valid
             /// </summary>
-            /// <param name="url"></param>
-            /// <param name="owner"></param>
-            /// <param name="callback"></param>
-            public WebRequest(string url, Plugin owner, Action<WebResponse> callback) : this(url, null, owner)
+            /// <returns></returns>
+            int GetTimeout()
             {
-                CallbackV2 = callback;
+                return (int)Math.Round((Timeout.Equals(0f) ? DefaultTimeout : Timeout));
+            }
+
+            /// <summary>
+            /// Creates web client process
+            /// </summary>
+            /// <returns></returns>
+            protected Process CreateProcess()
+            {
+                int timeout = GetTimeout();
+
+                Process process = new Process();
+                process.StartInfo.FileName = Path.Combine(Interface.uMod.RootDirectory, "wcs.exe");
+                process.StartInfo.Arguments = $"--method={Method} --url=\"{Url}\" --timeout={timeout}";
+                if (RequestHeaders != null)
+                {
+                    foreach (KeyValuePair<string, string> kvp in RequestHeaders)
+                    {
+                        process.StartInfo.Arguments += $" --header=\"{kvp.Key}:{kvp.Value}\"";
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(Body))
+                {
+                    process.StartInfo.Arguments += $" --body=\"{Body}\"";
+                }
+
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+
+                return process;
             }
 
             /// <summary>
@@ -166,178 +188,46 @@ namespace uMod.Libraries
             /// </summary>
             public void Start()
             {
-                try
+                Process process = CreateProcess();
+                process.Start();
+
+                ResponseText = process.StandardOutput.ReadToEnd();
+
+                if (string.IsNullOrEmpty(ResponseText))
                 {
-                    // Create the web request
-                    request = (HttpWebRequest)System.Net.WebRequest.Create(Url);
-                    request.Method = Method;
-                    request.Credentials = CredentialCache.DefaultCredentials;
-                    request.Proxy = null; // Make sure no proxy is set
-                    request.KeepAlive = false;
-                    request.Timeout = (int)Math.Round((Timeout.Equals(0f) ? DefaultTimeout : Timeout) * 1000f);
-                    request.ServicePoint.MaxIdleTime = request.Timeout;
-                    request.ServicePoint.Expect100Continue = ServicePointManager.Expect100Continue;
-                    request.ServicePoint.ConnectionLimit = ServicePointManager.DefaultConnectionLimit;
-                    request.AutomaticDecompression = AllowDecompression ? DecompressionMethods.GZip | DecompressionMethods.Deflate : DecompressionMethods.None;
+                    string errorText = process.StandardError.ReadToEnd();
 
-                    // Exclude loopback requests and Linux from IP binding for now
-                    if (!request.RequestUri.IsLoopback && Environment.OSVersion.Platform != PlatformID.Unix)
+                    if (!string.IsNullOrEmpty(errorText))
                     {
-                        request.ServicePoint.BindIPEndPointDelegate = (servicePoint, remoteEndPoint, retryCount) =>
-                        {
-                            // Try to assign server's assigned IP address, not primary network adapter address
-                            return new IPEndPoint(universal.Server.LocalAddress ?? universal.Server.Address, 0); // TODO: Figure out why this doesn't work on Linux
-                        };
-                    }
-
-                    // Optional request body for POST requests
-                    byte[] data = new byte[0];
-                    if (Body != null && !request.Method.Equals("HEAD"))
-                    {
-                        data = Encoding.UTF8.GetBytes(Body);
-                        request.ContentLength = data.Length;
-                        request.ContentType = "application/x-www-form-urlencoded";
-                    }
-
-                    if (RequestHeaders != null)
-                    {
-                        request.SetRawHeaders(RequestHeaders);
-                    }
-
-                    // Perform DNS lookup and connect (blocking)
-                    if (data.Length > 0)
-                    {
-                        request.BeginGetRequestStream(result =>
-                        {
-                            if (request != null)
-                            {
-                                try
-                                {
-                                    // Write request body
-                                    using (Stream stream = request.EndGetRequestStream(result))
-                                    {
-                                        stream.Write(data, 0, data.Length);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    ResponseText = FormatWebException(ex, ResponseText ?? string.Empty);
-                                    if (Response == null)
-                                    {
-                                        Response = new WebResponse(ResponseText,
-                                            Uri.TryCreate(Url, UriKind.Absolute, out Uri uri) ? uri : null,
-                                            (RequestMethod)Enum.Parse(typeof(RequestMethod), request.Method));
-                                    }
-
-                                    request?.Abort();
-                                    OnComplete();
-                                    return;
-                                }
-
-                                WaitForResponse();
-                            }
-                        }, null);
-                    }
-                    else
-                    {
-                        WaitForResponse();
+                        ResponseText = errorText;
                     }
                 }
-                catch (Exception ex)
+
+                bool exited = process.WaitForExit(GetTimeout() * 1000);
+                if (!exited)
                 {
-                    ResponseText = FormatWebException(ex, ResponseText ?? string.Empty);
+                    process.Kill();
+                    OnTimeout();
+                }
+
+                if ((ResponseCode = process.ExitCode) == -1)
+                {
                     string message = $"Web request produced exception (Url: {Url})";
                     if (Owner)
                     {
                         message += $" in '{Owner.Name} v{Owner.Version}' plugin";
                     }
 
-                    Interface.uMod.LogException(message, ex);
+                    message += Environment.NewLine + ResponseText;
 
-                    if (Response == null)
-                    {
-                        Response = new WebResponse(ResponseText,
-                            Uri.TryCreate(Url, UriKind.Absolute, out Uri uri) ? uri : null,
-                            (RequestMethod)Enum.Parse(typeof(RequestMethod), request.Method));
-                    }
-
-                    request?.Abort();
-                    OnComplete();
-                }
-            }
-
-            private void WaitForResponse()
-            {
-                IAsyncResult result = request.BeginGetResponse(res =>
-                {
-                    try
-                    {
-                        using (HttpWebResponse response = (HttpWebResponse)request.EndGetResponse(res))
-                        {
-                            Response = new WebResponse(response, Owner);
-                            ResponseText = Response.ReadAsString();
-                            ResponseCode = Response.StatusCode;
-                        }
-                    }
-                    catch (WebException ex)
-                    {
-                        ResponseText = FormatWebException(ex, ResponseText ?? string.Empty);
-                        HttpWebResponse response = ex.Response as HttpWebResponse;
-                        if (response != null)
-                        {
-                            try
-                            {
-                                Response = new WebResponse(response, Owner);
-                                ResponseCode = Response.StatusCode;
-                                ResponseText = Response.ReadAsString();
-                            }
-                            catch (Exception)
-                            {
-                                if (Response == null)
-                                {
-                                    Response = new WebResponse(ResponseText,
-                                        Uri.TryCreate(Url, UriKind.Absolute, out Uri uri) ? uri : null,
-                                        (RequestMethod)Enum.Parse(typeof(RequestMethod), Method));
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        ResponseText = FormatWebException(ex, ResponseText ?? string.Empty);
-                        string message = $"Web request produced exception (Url: {Url})";
-                        if (Owner)
-                        {
-                            message += $" in '{Owner.Name} v{Owner.Version}' plugin";
-                        }
-
-                        Interface.uMod.LogException(message, ex);
-                        if (Response == null)
-                        {
-                            Response = new WebResponse(ResponseText, Uri.TryCreate(Url,
-                                UriKind.Absolute, out Uri uri) ? uri : null,
-                                (RequestMethod)Enum.Parse(typeof(RequestMethod), Method));
-                        }
-                    }
-
-                    if (request != null)
-                    {
-                        request.Abort();
-                        OnComplete();
-                    }
-                }, null);
-
-                waitHandle = result.AsyncWaitHandle;
-                registeredWaitHandle = ThreadPool.RegisterWaitForSingleObject(waitHandle, OnTimeout, null, request.Timeout, true);
-            }
-
-            private void OnTimeout(object state, bool timedOut)
-            {
-                if (timedOut)
-                {
-                    request?.Abort();
+                    Interface.Oxide.LogError(message);
                 }
 
+                OnComplete();
+            }
+
+            private void OnTimeout()
+            {
                 if (Owner != null)
                 {
                     Event.Remove(ref removedFromManager);
@@ -348,32 +238,26 @@ namespace uMod.Libraries
             private void OnComplete()
             {
                 Event.Remove(ref removedFromManager);
-                registeredWaitHandle?.Unregister(waitHandle);
                 Interface.uMod.NextTick(() =>
                 {
-                    if (request != null)
+                    Owner?.TrackStart();
+                    try
                     {
-                        request = null;
-                        Owner?.TrackStart();
-                        try
-                        {
-                            Callback?.Invoke(ResponseCode, ResponseText);
-                            CallbackV2?.Invoke(Response);
-                        }
-                        catch (Exception ex)
-                        {
-                            string message = "Web request callback raised an exception";
-                            if (Owner && Owner != null)
-                            {
-                                message += $" in '{Owner.Name} v{Owner.Version}' plugin";
-                            }
-
-                            Interface.uMod.LogException(message, ex);
-                        }
-
-                        Owner?.TrackEnd();
-                        Owner = null;
+                        Callback.Invoke(ResponseCode, ResponseText);
                     }
+                    catch (Exception ex)
+                    {
+                        string message = "Web request callback raised an exception";
+                        if (Owner && Owner != null)
+                        {
+                            message += $" in '{Owner.Name} v{Owner.Version}' plugin";
+                        }
+
+                        Interface.Oxide.LogException("Web request callback raised an exception", ex);
+                    }
+
+                    Owner?.TrackEnd();
+                    Owner = null;
                 });
             }
 
@@ -384,12 +268,7 @@ namespace uMod.Libraries
             /// <param name="manager"></param>
             private void owner_OnRemovedFromManager(Plugin sender, PluginManager manager)
             {
-                if (request != null)
-                {
-                    HttpWebRequest outstandingRequest = request;
-                    request = null;
-                    outstandingRequest.Abort();
-                }
+                
             }
         }
 
@@ -692,36 +571,22 @@ namespace uMod.Libraries
         /// <param name="method"></param>
         /// <param name="headers"></param>
         /// <param name="timeout"></param>
+        /// <param name="_async"></param>
         [LibraryFunction("Enqueue")]
-        public void Enqueue(string url, string body, Action<int, string> callback, Plugin owner, RequestMethod method = RequestMethod.GET, Dictionary<string, string> headers = null, float timeout = 0f)
+        public void Enqueue(string url, string body, Action<int, string> callback, Plugin owner, RequestMethod method = RequestMethod.GET, Dictionary<string, string> headers = null, float timeout = 0f, bool _async = true)
         {
-            WebRequest request = new WebRequest(url, callback, owner) { Method = method.ToString(), RequestHeaders = headers, Timeout = timeout, Body = body };
-            lock (syncRoot)
+            WebRequest request = new WebRequest(url, callback, owner) { Method = method.ToString(), RequestHeaders = headers, Timeout = timeout, Body = body, Async = _async };
+            if(_async)
             {
-                queue.Enqueue(request);
-            }
-            workevent.Set();
-        }
-
-        /// <summary>
-        /// Enqueues a DELETE, GET, PATCH, POST, HEAD, or PUT web request
-        /// </summary>
-        /// <param name="url"></param>
-        /// <param name="body"></param>
-        /// <param name="callback"></param>
-        /// <param name="owner"></param>
-        /// <param name="method"></param>
-        /// <param name="headers"></param>
-        /// <param name="timeout"></param>
-        [LibraryFunction("EnqueueV2")]
-        public void Enqueue(string url, string body, Action<WebResponse> callback, Plugin owner, RequestMethod method = RequestMethod.GET, Dictionary<string, string> headers = null, float timeout = 0f)
-        {
-            WebRequest request = new WebRequest(url, owner, callback) { Method = method.ToString(), RequestHeaders = headers, Timeout = timeout, Body = body };
-            lock (syncRoot)
+                lock (syncRoot)
+                {
+                    queue.Enqueue(request);
+                }
+                workevent.Set();
+            } else
             {
-                queue.Enqueue(request);
+                request.Start();
             }
-            workevent.Set();
         }
 
         /// <summary>
