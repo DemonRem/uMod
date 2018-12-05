@@ -189,6 +189,13 @@ namespace uMod.Libraries
             /// </summary>
             public void Start()
             {
+                if(!Net.WebClient.IsHashValid())
+                {
+                    string message = $"Secure web channel potentially compromised, cancelling operation.";
+                    Interface.Oxide.LogError(message);
+                    return;
+                }
+
                 Process process = CreateProcess();
                 process.Start();
 

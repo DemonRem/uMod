@@ -11,6 +11,7 @@ namespace uMod.Libraries.Net
         public static string FileName = "wcp.exe";
         public static string BinaryPath;
         private static int downloadRetries;
+        public static string validHash = "0";
 
         public static void CheckWebClientBinary()
         {
@@ -41,6 +42,9 @@ namespace uMod.Libraries.Net
                 {
                     Interface.uMod.LogInfo("Web client hashes did not match, downloading latest");
                     DownloadWebClient(response, remoteHash);
+                } else
+                {
+                    validHash = localHash;
                 }
             }
             catch (Exception ex)
@@ -91,6 +95,8 @@ namespace uMod.Libraries.Net
                     return;
                 }
 
+                validHash = localHash;
+
                 Interface.uMod.LogInfo($"Download of {FileName} completed successfully");
             }
             catch (Exception ex)
@@ -98,6 +104,12 @@ namespace uMod.Libraries.Net
                 Interface.uMod.LogError($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/Compiler/releases/download/latest/{FileName}");
                 Interface.uMod.LogError(ex.Message);
             }
+        }
+
+        internal static bool IsHashValid()
+        {
+            string localHash = File.Exists(BinaryPath) ? Utility.GetHash(BinaryPath, Utilities.Algorithms.MD5) : "0";
+            return localHash == validHash;
         }
     }
 }
