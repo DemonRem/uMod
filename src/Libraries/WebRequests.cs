@@ -159,10 +159,11 @@ namespace uMod.Libraries
             protected Process CreateProcess()
             {
                 int timeout = GetTimeout();
+                IPAddress address = universal.Server.LocalAddress ?? universal.Server.Address;
 
                 Process process = new Process();
                 process.StartInfo.FileName = Path.Combine(Interface.uMod.RootDirectory, "wcp.exe");
-                process.StartInfo.Arguments = $"--method={Method} --url=\"{Url}\" --timeout={timeout}";
+                process.StartInfo.Arguments = $"--method={Method} --url=\"{Url}\" --timeout={timeout} --address=\"{address}\"";
                 if (RequestHeaders != null)
                 {
                     foreach (KeyValuePair<string, string> kvp in RequestHeaders)
