@@ -8,15 +8,19 @@ namespace uMod.Libraries.Net
 {
     internal class WebClient
     {
-        public static string FileName = "wcp.exe";
-        public static string BinaryPath;
-        private static int downloadRetries;
+        internal static string FileName = "wcp.exe";
+        internal static string BinaryPath;
         internal static string validHash = "0";
+        
+        private static int downloadRetries;
 
         public static void CheckWebClientBinary()
         {
-            BinaryPath = Path.Combine(Interface.uMod.RootDirectory, FileName);
-            UpdateCheck();
+            if (downloadRetries < 3)
+            {
+                BinaryPath = Path.Combine(Interface.uMod.RootDirectory, FileName);
+                UpdateCheck();
+            }
         }
 
         private static void UpdateCheck()
@@ -82,7 +86,7 @@ namespace uMod.Libraries.Net
 
                 if (downloadRetries >= 3)
                 {
-                    Interface.uMod.LogInfo($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/Compiler/releases/download/latest/{FileName}");
+                    Interface.uMod.LogInfo($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/WebClient/releases/download/latest/{FileName}");
                     return;
                 }
 
@@ -101,7 +105,7 @@ namespace uMod.Libraries.Net
             }
             catch (Exception ex)
             {
-                Interface.uMod.LogError($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/Compiler/releases/download/latest/{FileName}");
+                Interface.uMod.LogError($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/WebClient/releases/download/latest/{FileName}");
                 Interface.uMod.LogError(ex.Message);
             }
         }

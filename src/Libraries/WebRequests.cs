@@ -235,6 +235,11 @@ namespace uMod.Libraries
                 if(!Net.WebClient.IsHashValid())
                 {
                     Interface.Oxide.LogError($"Secure web channel potentially compromised, cancelling web request {Url}.");
+
+                    Interface.uMod.NextTick(() =>
+                    {
+                        Net.WebClient.CheckWebClientBinary();
+                    });
                     return;
                 }
 
@@ -242,11 +247,8 @@ namespace uMod.Libraries
                 process.Start();
 
                 string response = process.StandardOutput.ReadToEnd();
-                JObject jsonObject = JObject.Parse(response);
-                Response = jsonObject.ToObject<WebResponse>();
-                ResponseText = Response.ReadAsString();
 
-                if (string.IsNullOrEmpty(ResponseText))
+                if (string.IsNullOrEmpty(response))
                 {
                     string errorText = process.StandardError.ReadToEnd();
 
@@ -254,6 +256,12 @@ namespace uMod.Libraries
                     {
                         ResponseText = errorText;
                     }
+                }
+                else
+                {
+                    JObject jsonObject = JObject.Parse(response);
+                    Response = jsonObject.ToObject<WebResponse>();
+                    ResponseText = Response.ReadAsString();
                 }
 
                 bool exited = process.WaitForExit(GetTimeout() * 1000);
@@ -436,36 +444,10 @@ namespace uMod.Libraries
         }
 
         /// <summary>
-        /// Formats given WebException to string
-        /// </summary>
-        /// <param name="exception"></param>
-        /// <param name="response"></param>
-        /// <returns></returns>
-        public static string FormatWebException(Exception exception, string response)
-        {
-            if (!string.IsNullOrEmpty(response))
-            {
-                response += Environment.NewLine;
-            }
-
-            response += exception.Message; // TODO: Fix duplicate messages
-
-            if (exception.InnerException != null && !response.Equals(exception.InnerException.Message))
-            {
-                response = FormatWebException(exception.InnerException, response);
-            }
-
-            return response;
-        }
-
-        /// <summary>
         /// Initializes a new instance of the WebRequests library
         /// </summary>
         public WebRequests()
         {
-            // Accept all SSL certificates for compiler and web request library (temporary)
-            ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
-
             ThreadPool.GetMaxThreads(out maxWorkerThreads, out maxCompletionPortThreads);
             maxCompletionPortThreads = (int)(maxCompletionPortThreads * 0.6);
             maxWorkerThreads = (int)(maxWorkerThreads * 0.75);
@@ -624,93 +606,5 @@ namespace uMod.Libraries
         /// <returns></returns>
         [LibraryFunction("GetQueueLength")]
         public int GetQueueLength() => queue.Count;
-    }
-
-    // HttpWebRequest extensions to add raw header support
-    public static class HttpWebRequestExtensions
-    {
-        /// <summary>
-        /// Headers that require modification via a property
-        /// </summary>
-        private static readonly string[] RestrictedHeaders = {
-            "Accept",
-            "Connection",
-            "Content-Length",
-            "Content-Type",
-            "Date",
-            "Expect",
-            "Host",
-            "If-Modified-Since",
-            "Keep-Alive",
-            "Proxy-Connection",
-            "Range",
-            "Referer",
-            "Transfer-Encoding",
-            "User-Agent"
-        };
-
-        /// <summary>
-        /// Dictionary of all of the header properties
-        /// </summary>
-        private static readonly Dictionary<string, PropertyInfo> HeaderProperties = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Initialize the HeaderProperties dictionary
-        /// </summary>
-        static HttpWebRequestExtensions()
-        {
-            Type type = typeof(HttpWebRequest);
-            foreach (string header in RestrictedHeaders)
-            {
-                HeaderProperties[header] = type.GetProperty(header.Replace("-", ""));
-            }
-        }
-
-        /// <summary>
-        /// Sets raw HTTP request headers
-        /// </summary>
-        /// <param name="request">Request object</param>
-        /// <param name="headers">Dictionary of headers to set</param>
-        public static void SetRawHeaders(this WebRequest request, Dictionary<string, string> headers)
-        {
-            foreach (KeyValuePair<string, string> keyValPair in headers)
-            {
-                request.SetRawHeader(keyValPair.Key, keyValPair.Value);
-            }
-        }
-
-        /// <summary>
-        /// Sets a raw HTTP request header
-        /// </summary>
-        /// <param name="request">Request object</param>
-        /// <param name="name">Name of the header</param>
-        /// <param name="value">Value of the header</param>
-        public static void SetRawHeader(this WebRequest request, string name, string value)
-        {
-            if (HeaderProperties.ContainsKey(name))
-            {
-                PropertyInfo property = HeaderProperties[name];
-                if (property.PropertyType == typeof(DateTime))
-                {
-                    property.SetValue(request, DateTime.Parse(value), null);
-                }
-                else if (property.PropertyType == typeof(bool))
-                {
-                    property.SetValue(request, bool.Parse(value), null);
-                }
-                else if (property.PropertyType == typeof(long))
-                {
-                    property.SetValue(request, long.Parse(value), null);
-                }
-                else
-                {
-                    property.SetValue(request, value, null);
-                }
-            }
-            else
-            {
-                request.Headers[name] = value;
-            }
-        }
     }
 }
