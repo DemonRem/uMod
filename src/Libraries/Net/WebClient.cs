@@ -11,7 +11,7 @@ namespace uMod.Libraries.Net
         public static string FileName = "wcp.exe";
         public static string BinaryPath;
         private static int downloadRetries;
-        public static string validHash = "0";
+        internal static string validHash = "0";
 
         public static void CheckWebClientBinary()
         {
