@@ -105,7 +105,7 @@ namespace uMod.Libraries
             /// <summary>
             /// Gets or sets the web request method
             /// </summary>
-            public string Method { get; set; } = RequestMethod.GET;
+            public string Method { get; set; } = "GET";
 
             /// <summary>
             /// Gets the destination URL
@@ -167,11 +167,14 @@ namespace uMod.Libraries
             /// Initializes a new instance of the WebRequest class
             /// </summary>
             /// <param name="url"></param>
-            /// <param name="owner"></param>
             /// <param name="callback"></param>
-            public WebRequest(string url, Action<WebResponse> callback, Plugin owner) : this(url, null, owner)
+            /// <param name="owner"></param>
+            public WebRequest(string url, Action<WebResponse> callback, Plugin owner)
             {
+                Url = url;
                 CallbackV2 = callback;
+                Owner = owner;
+                removedFromManager = Owner?.OnRemovedFromManager.Add(owner_OnRemovedFromManager);
             }
 
             /// <summary>
@@ -204,7 +207,7 @@ namespace uMod.Libraries
                     }
                 }
 
-                if(Cookies != null && Cookies.Length > 0)
+                if(Cookies != null && Cookies.Count > 0)
                 {
                     foreach (KeyValuePair<string, string> kvp in Cookies)
                     {
