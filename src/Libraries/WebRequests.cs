@@ -1,3 +1,8 @@
+extern alias References;
+
+using References::Newtonsoft.Json;
+using References::Newtonsoft.Json.Linq;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,8 +11,6 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Diagnostics;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using uMod.Plugins;
 
 namespace uMod.Libraries
