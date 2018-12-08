@@ -86,7 +86,7 @@ namespace uMod.Libraries.Net
 
                 if (downloadRetries >= 3)
                 {
-                    Interface.uMod.LogInfo($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/WebClient/releases/download/latest/{FileName}");
+                    Interface.uMod.LogInfo($"Couldn't download {FileName}! Please download manually from: https://gitlab.com/theumod/umod-webclient/");
                     return;
                 }
 
@@ -105,7 +105,7 @@ namespace uMod.Libraries.Net
             }
             catch (Exception ex)
             {
-                Interface.uMod.LogError($"Couldn't download {FileName}! Please download manually from: https://github.com/theumod/WebClient/releases/download/latest/{FileName}");
+                Interface.uMod.LogError($"Couldn't download {FileName}! Please download manually from: https://gitlab.com/theumod/umod-webclient/");
                 Interface.uMod.LogError(ex.Message);
             }
         }
