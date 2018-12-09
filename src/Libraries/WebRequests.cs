@@ -558,6 +558,7 @@ namespace uMod.Libraries
         /// <param name="method"></param>
         /// <param name="headers"></param>
         /// <param name="timeout"></param>
+        [LibraryFunction("EnqueueV2")]
         public void Enqueue(string url, string body, Action<WebResponse> callback, Plugin owner, RequestMethod method = RequestMethod.GET, Dictionary<string, string> headers = null, float timeout = 0f, bool _async = true)
         {
             WebRequest request = new WebRequest(url, callback, owner) { Method = method.ToString(), RequestHeaders = headers, Timeout = timeout, Body = body, Async = _async };
